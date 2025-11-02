@@ -124,7 +124,7 @@ if st.button(T["predict"]):
     lp = intercept_val + np.dot(x_std,coef_arr)
     p = 1/(1+np.exp(-lp))
     risk = float(p[0])
-    st.markdown(f"<h3 style='text-align:center'>🩺 Risk Probability: <b>{risk*100:.1f}%</b></h3>",unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align:center'> Risk Probability: <b>{risk*100:.1f}%</b></h3>",unsafe_allow_html=True)
     if risk < 0.1: st.success(T["low"])
     elif risk < 0.3: st.warning(T["mid"])
     else: st.error(T["high"])
