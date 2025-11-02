@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import numpy as np
 import joblib
@@ -7,19 +6,20 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 # -------------------------------
-# Page Configuration
+# Page config
 # -------------------------------
 st.set_page_config(page_title="CVD Risk Prediction", layout="centered")
 
 # -------------------------------
-# Language Toggle (Top-right)
+# Language toggle in top-right
 # -------------------------------
 if "lang" not in st.session_state:
     st.session_state.lang = "en"
 
-# Place language button in top-right corner
-col_lang, _ = st.columns([0.15, 0.85])
-with col_lang:
+# Create two columns, put the language toggle in the right (small) column
+col_left, col_right = st.columns([0.82, 0.18])
+with col_right:
+    # show the toggle button; when english -> button shows 中文; when chinese -> button shows English
     if st.session_state.lang == "en":
         if st.button("中文"):
             st.session_state.lang = "cn"
@@ -27,8 +27,10 @@ with col_lang:
         if st.button("English"):
             st.session_state.lang = "en"
 
+lang = st.session_state.lang
+
 # -------------------------------
-# Multilingual Text
+# Multilingual text
 # -------------------------------
 TEXT = {
     "en": {
@@ -51,7 +53,10 @@ TEXT = {
         "mid": "Moderate risk. Consider regular cardiovascular checkups.",
         "high": "High risk. Please consult a doctor for detailed evaluation.",
         "shap": "SHAP Force Plot",
-        "no_model": "SHAP visualization is not available without the trained model file."
+        "no_model": "SHAP visualization is not available without the trained model file.",
+        "model_info_title": "Model information",
+        "model_info_text": "The app tries to load a trained model file named `model_LR_tuned_optuna_calibrated.pkl`. "
+                           "If not found, example coefficients are used for demonstration."
     },
     "cn": {
         "title": "心血管疾病风险预测",
@@ -72,23 +77,27 @@ TEXT = {
         "mid": "中风险：建议定期进行心血管健康检查。",
         "high": "高风险：建议尽快就医进行评估。",
         "shap": "SHAP 力图",
-        "no_model": "未检测到模型文件，无法显示 SHAP 可视化。"
+        "no_model": "未检测到模型文件，无法显示 SHAP 可视化。",
+        "model_info_title": "模型简介",
+        "model_info_text": "程序会尝试加载名为 `model_LR_tuned_optuna_calibrated.pkl` 的训练模型文件。若未找到，将使用示例系数进行演示。"
     }
 }
-
-lang = st.session_state.lang
 T = TEXT[lang]
 
 # -------------------------------
-# Load model
+# Try to load model
 # -------------------------------
 MODEL_PATH = "model_LR_tuned_optuna_calibrated.pkl"
 try:
     model = joblib.load(MODEL_PATH)
-except Exception:
+    model_loaded = True
+except Exception as e:
     model = None
+    model_loaded = False
 
-# Example fallback coefficients
+# -------------------------------
+# Default coefficients (fallback)
+# -------------------------------
 example_coefficients = {
     'SBP': 0.1448, 'TG': 0.0315, 'WBC': 0.0659, 'BMI': 0.0256,
     'Hypertension': 0.1309, 'Dyslipidemia': 0.1399, 'Multimorbidity': 0.1841,
@@ -96,32 +105,57 @@ example_coefficients = {
 }
 intercept = -1.5
 
-# Try to extract coefficients
+# Try to extract real coefficients if possible
 if model is not None:
     try:
-        if hasattr(model, "base_estimator_"):  # For calibrated models
-            lr_model = model.base_estimator_
-            intercept = lr_model.intercept_[0]
-            example_coefficients = dict(zip(lr_model.feature_names_in_, lr_model.coef_[0]))
-        elif hasattr(model, "coef_"):
-            intercept = model.intercept_[0]
-            example_coefficients = dict(zip(model.feature_names_in_, model.coef_[0]))
+        # If model is a calibrated wrapper, try to find inner estimator
+        if model.__class__.__name__ == "CalibratedClassifierCV":
+            # try a few ways to get the inner estimator
+            inner = None
+            if hasattr(model, "base_estimator") and model.base_estimator is not None:
+                inner = model.base_estimator
+            elif hasattr(model, "base_estimator_") and model.base_estimator_ is not None:
+                inner = model.base_estimator_
+            elif hasattr(model, "calibrated_classifiers_") and len(model.calibrated_classifiers_) > 0:
+                # calibrated_classifiers_ may contain fitted classifiers; try first and see if it has coef_
+                try:
+                    inner = model.calibrated_classifiers_[0]
+                except Exception:
+                    inner = None
+            if inner is not None and hasattr(inner, "coef_"):
+                intercept = float(inner.intercept_[0]) if hasattr(inner.intercept_, "__len__") else float(inner.intercept_)
+                example_coefficients = dict(zip(inner.feature_names_in_, inner.coef_[0]))
+            else:
+                # fallback: try the wrapper itself
+                if hasattr(model, "coef_"):
+                    intercept = float(model.intercept_[0]) if hasattr(model.intercept_, "__len__") else float(model.intercept_)
+                    example_coefficients = dict(zip(model.feature_names_in_, model.coef_[0]))
+        else:
+            # not calibrated, interpret directly
+            if hasattr(model, "coef_") and hasattr(model, "feature_names_in_"):
+                intercept = float(model.intercept_[0]) if hasattr(model.intercept_, "__len__") else float(model.intercept_)
+                example_coefficients = dict(zip(model.feature_names_in_, model.coef_[0]))
     except Exception:
+        # keep fallback if extraction fails
         pass
 
 # -------------------------------
-# Title and Intro
+# Title + model intro (moved under title)
 # -------------------------------
 st.markdown(f"<h1 style='text-align:center'>{T['title']}</h1>", unsafe_allow_html=True)
-st.markdown(f"<p style='text-align:center; font-size:16px; color:#555;'>{T['intro']}</p>", unsafe_allow_html=True)
+st.markdown(f"<p style='text-align:center; color:#444'>{T['intro']}</p>", unsafe_allow_html=True)
+
+# Model intro area (under title, above inputs)
+st.markdown("### " + T.get("model_info_title", "Model information"))
+st.info(T.get("model_info_text", ""))
+
 st.markdown("---")
 
 # -------------------------------
-# Layout
+# Inputs layout
 # -------------------------------
 col1, col2 = st.columns(2)
 
-# Column 1: numeric inputs
 with col1:
     birth_year = st.number_input(T["birth"], min_value=1900, max_value=2025, value=1960, step=1)
     sbp = st.number_input(T["sbp"], min_value=80, max_value=200, value=120, step=1)
@@ -129,36 +163,33 @@ with col1:
     wbc = st.number_input(T["wbc"], min_value=2.0, max_value=20.0, value=6.0, step=0.1)
     bmi = st.number_input(T["bmi"], min_value=15.0, max_value=40.0, value=22.0, step=0.1)
 
-# Determine famine exposure automatically
+# famine categorization based on birth year (localized text)
 def categorize_famine_exposure(year):
     if year > 1963:
-        return 1, "No-exposed group (birth after 1963-01-01)" if lang == "en" else "非暴露组（出生≥1963-01-01）"
+        return 1, ("No-exposed group (birth after 1963-01-01)" if lang == "en" else "非暴露组（出生≥1963-01-01）")
     elif 1959 <= year <= 1962:
-        return 2, "Fetal-exposed group (birth 1959–1962)" if lang == "en" else "胎儿期暴露组（1959–1962年出生）"
+        return 2, ("Fetal-exposed group (birth 1959–1962)" if lang == "en" else "胎儿期暴露组（1959–1962年出生）")
     elif 1949 <= year <= 1958:
-        return 3, "Childhood-exposed group (birth 1949–1958)" if lang == "en" else "儿童期暴露组（1949–1958年出生）"
+        return 3, ("Childhood-exposed group (birth 1949–1958)" if lang == "en" else "儿童期暴露组（1949–1958年出生）")
     else:
-        return 4, "Adolescence/Adult-exposed group (birth ≤1948)" if lang == "en" else "青春期/成人暴露组（≤1948年出生）"
+        return 4, ("Adolescence/Adult-exposed group (birth ≤1948)" if lang == "en" else "青春期/成人暴露组（≤1948年出生）")
 
 famine_exposure, famine_text = categorize_famine_exposure(birth_year)
 
-# Column 2: categorical inputs
 with col2:
     hypertension = st.selectbox(T["htn"], [0, 1])
     dyslipidemia = st.selectbox(T["dys"], [0, 1])
     multimorbidity = st.selectbox(T["multi"], [0, 1])
     bodily_pains = st.selectbox(T["pain"], [0, 1])
-    famine_display = st.selectbox(
-        T["famine"],
-        ["1 - No-exposed", "2 - Fetal-exposed", "3 - Childhood-exposed", "4 - Adolescence/Adult-exposed"]
-        if lang == "en"
-        else ["1 - 非暴露组", "2 - 胎儿期暴露组", "3 - 儿童期暴露组", "4 - 青春期/成人暴露组"],
-        index=famine_exposure - 1
-    )
+    # Famine exposure shown as dropdown (auto set but same UI)
+    famine_options = (["1 - No-exposed", "2 - Fetal-exposed", "3 - Childhood-exposed", "4 - Adolescence/Adult-exposed"]
+                      if lang == "en"
+                      else ["1 - 非暴露组", "2 - 胎儿期暴露组", "3 - 儿童期暴露组", "4 - 青春期/成人暴露组"])
+    famine_display = st.selectbox(T["famine"], famine_options, index=famine_exposure - 1)
     st.caption(f"{T['auto']} {famine_text}")
 
 # -------------------------------
-# Calculate Risk
+# Prediction logic
 # -------------------------------
 numerical_stats = {'SBP': {'mean': 135, 'std': 20}, 'TG': {'mean': 150, 'std': 80},
                    'WBC': {'mean': 6.5, 'std': 2.0}, 'BMI': {'mean': 24, 'std': 4}}
@@ -199,16 +230,84 @@ if st.button(T["predict"]):
         st.error(T["high"])
 
     # -------------------------------
-    # SHAP Force Plot
+    # SHAP: robust handling for calibrated or unknown model types
     # -------------------------------
+    def build_simple_linear_model(intercept_val, coef_dict, feature_order):
+        coef_list = [coef_dict.get(f, 0.0) for f in feature_order]
+        class SimpleLinear:
+            def __init__(self, intercept, coefs):
+                self.intercept_ = np.array([intercept])
+                self.coef_ = np.array([coefs])
+                self.feature_names_in_ = np.array(feature_order)
+            def predict(self, X):
+                X = np.asarray(X, dtype=float)
+                return (X.dot(np.array(coefs)) + intercept).ravel()
+            def predict_proba(self, X):
+                lp = self.predict(X)
+                p = 1.0 / (1.0 + np.exp(-lp))
+                # return shape (n_samples, 2)
+                return np.vstack([1 - p, p]).T
+        # Note: we capture intercept and coef_list via closure variables
+        return SimpleLinear(intercept_val, coef_list)
+
     try:
         if model is not None:
-            inner_model = model.base_estimator_ if hasattr(model, "base_estimator_") else model
-            explainer = shap.LinearExplainer(inner_model, np.zeros((1, len(inputs))))
-            shap_values = explainer(np.array(list(inputs.values())).reshape(1, -1))
+            # try to derive an inner linear estimator for SHAP
+            inner_for_shap = None
+            # Case 1: CalibratedClassifierCV (commonly causes the "unknown model type" error)
+            if model.__class__.__name__ == "CalibratedClassifierCV":
+                # try base_estimator or base_estimator_
+                if hasattr(model, "base_estimator") and model.base_estimator is not None:
+                    cand = model.base_estimator
+                elif hasattr(model, "base_estimator_") and model.base_estimator_ is not None:
+                    cand = model.base_estimator_
+                else:
+                    cand = None
+                # if cand has coef_ use it
+                if cand is not None and hasattr(cand, "coef_"):
+                    inner_for_shap = cand
+                else:
+                    # fallback: try calibrated_classifiers_ list elements (sklearn stores fitted calibrated estimators)
+                    try:
+                        if hasattr(model, "calibrated_classifiers_") and len(model.calibrated_classifiers_) > 0:
+                            candidate = model.calibrated_classifiers_[0]
+                            if hasattr(candidate, "coef_"):
+                                inner_for_shap = candidate
+                    except Exception:
+                        inner_for_shap = None
+            else:
+                # not calibrated: use model directly if it's linear-like
+                if hasattr(model, "coef_"):
+                    inner_for_shap = model
+
+            # If still None, build a simple linear model from extracted coefficients
+            if inner_for_shap is None:
+                inner_for_shap = build_simple_linear_model(intercept, example_coefficients, list(inputs.keys()))
+
+            # Prepare standardized sample for SHAP explanation (explainer expects the same space as model)
+            sample_std = np.array([standardize(k, v) for k, v in inputs.items()]).reshape(1, -1)
+            # Background: use zeros (meaning mean after standardization)
+            background = np.zeros((1, sample_std.shape[1]))
+            explainer = shap.LinearExplainer(inner_for_shap, background, feature_perturbation="interventional")
+            shap_vals = explainer(sample_std)
             st.subheader(T["shap"])
-            shap.plots.force(shap_values[0], matplotlib=True, show=False)
-            st.pyplot(bbox_inches='tight')
+            # shap_vals may be array-like; produce force plot
+            try:
+                shap.plots.force(shap_vals[0], matplotlib=True, show=False)
+                st.pyplot(bbox_inches='tight')
+            except Exception:
+                # last-resort fallback: show bar chart of contributions
+                contribs = []
+                for f in inputs.keys():
+                    stdv = standardize(f, inputs[f])
+                    coef = example_coefficients.get(f, 0.0)
+                    contribs.append((f, coef * stdv))
+                contrib_df = pd.DataFrame(contribs, columns=["feature", "contribution"]).set_index("feature")
+                fig, ax = plt.subplots(figsize=(8,4))
+                contrib_df.sort_values("contribution", inplace=True)
+                ax.barh(contrib_df.index, contrib_df["contribution"])
+                ax.set_xlabel("Contribution (coef * standardized value)")
+                st.pyplot(fig)
         else:
             st.info(T["no_model"])
     except Exception as e:
