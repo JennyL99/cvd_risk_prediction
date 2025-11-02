@@ -157,12 +157,7 @@ if st.button(T["predict"]):
         shap.force_plot(explainer.expected_value,shap_vals_arr,x_standardized[0],feature_names=list(inputs.keys()),matplotlib=True,show=False)
         fig = plt.gcf()
         st.pyplot(fig)
-        st.subheader("All feature contributions")
-        fig2,ax = plt.subplots(figsize=(8,4))
-        contrib_df = pd.DataFrame({"feature":list(inputs.keys()),"shap_value":shap_vals_arr}).set_index("feature").sort_values("shap_value")
-        ax.barh(contrib_df.index,contrib_df["shap_value"])
-        ax.set_xlabel("SHAP value (impact on model output)")
-        st.pyplot(fig2)
+
     except Exception as e:
         st.warning(f"Unable to display SHAP force plot: {e}")
         contribs = []
