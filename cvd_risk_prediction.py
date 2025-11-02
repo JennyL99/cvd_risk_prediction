@@ -161,7 +161,7 @@ if st.button(T["predict"]):
     p = 1 / (1 + np.exp(-lp))
     risk = float(p[0])
 
-    st.markdown(f"<h3 style='text-align:center'>🩺 Risk Probability: <b>{risk*100:.1f}%</b></h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='text-align:center'> Risk Probability: <b>{risk*100:.1f}%</b></h3>", unsafe_allow_html=True)
     if risk < 0.1:
         st.success(T["low"])
     elif risk < 0.3:
@@ -172,7 +172,7 @@ if st.button(T["predict"]):
 # ----------------------------
 # SHAP force plot generation
 # ----------------------------
-    st.subheader("SHAP-style force plot")
+    st.subheader("SHAP Force Plot")
     try:
         background = np.zeros((1, len(FEATURE_ORDER)))
         class SkModel:
