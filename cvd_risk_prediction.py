@@ -189,24 +189,77 @@ if st.button(T["predict"]):
         st.error(T["high"])
 
     # ----------------------------
-    # SHAP Force Plot
+    # SHAP Force Plot (robust, using SkModel wrapper like your original working version)
     # ----------------------------
     try:
+        # 构造 sklearn-like 小模型（只包含 intercept_ 和 coef_）
         class SkModel:
             def __init__(self, intercept, coefs):
+                # intercept: float
+                # coefs: list or 1D-array, 与 FEATURE_ORDER 对应（在标准化空间下）
                 self.intercept_ = np.array([intercept])
                 self.coef_ = np.array([coefs])
-        coef_list = [coefs.get(f, 0.0) for f in inputs.keys()]
+                # feature_names_in_ 让 shap 能更好识别
+                self.feature_names_in_ = np.array(list(inputs.keys()))
+
+            # predict_proba 不是必须，但有些explainer可能会尝试调用
+            def predict_proba(self, X):
+                X = np.asarray(X, dtype=float)
+                lp = X.dot(self.coef_.T) + self.intercept_
+                p = 1.0 / (1.0 + np.exp(-lp))
+                return np.hstack([1-p, p])
+
+        # 1) 使用从模型加载到的系数（coefs）优先，否则用 fallback coefs
+        coef_list = [coefs.get(f, 0.0) for f in inputs.keys()]  # 保证与 inputs 顺序一致（inputs 构造时顺序固定）
         skm = SkModel(intercept_val, coef_list)
+
+        # 2) 构造 background（在标准化空间用 zeros 表示“平均值”）
         background = np.zeros((1, len(inputs)))
-        x_standardized = np.array([[standardize(f, v) for f, v in inputs.items()]])
+
+        # 3) 构造标准化的样本（必须与用于概率计算时的标准化一致）
+        def standardize_single(f, val):
+            if f in NUM_STATS:
+                std = NUM_STATS[f].get("std", 1.0) or 1.0
+                mean = NUM_STATS[f].get("mean", 0.0)
+                return (val - mean) / std
+            else:
+                return val
+
+        x_standardized = np.array([[ standardize_single(f, inputs[f]) for f in inputs.keys() ]])
+
+        # 4) 用 LinearExplainer（适合线性模型）解释（和你原始代码一致）
         explainer = shap.LinearExplainer(skm, background, feature_perturbation="interventional")
-        shap_vals = explainer.shap_values(x_standardized)
-        shap_vals = np.array(shap_vals).reshape(-1)
+        shap_vals = explainer.shap_values(x_standardized)  # 结果通常是一维或二维数组
+        # 把 shap_vals 转成 1d array（适配不同 shap 版本输出）
+        shap_vals_arr = np.array(shap_vals).reshape(-1)
+
+        # 5) 绘制 force plot（matplotlib 后端）
         plt.figure(figsize=(10, 2))
-        shap.force_plot(explainer.expected_value, shap_vals, x_standardized[0],
+        # 传入 explainer.expected_value（对于线性解释器通常是标量），
+        # 以及标准化后的 sample x_standardized[0]，并显式给出 feature_names（保证顺序）
+        shap.force_plot(explainer.expected_value, shap_vals_arr, x_standardized[0],
                         feature_names=list(inputs.keys()), matplotlib=True, show=False)
         fig = plt.gcf()
         st.pyplot(fig)
+
     except Exception as e:
+        # 如果任何地方失败，回退为条形图展示各特征贡献（coef * standardized value）
         st.warning(f"Unable to display SHAP force plot: {e}")
+        contribs = []
+        def standardize_single(f, val):
+            if f in NUM_STATS:
+                std = NUM_STATS[f].get("std", 1.0) or 1.0
+                mean = NUM_STATS[f].get("mean", 0.0)
+                return (val - mean) / std
+            else:
+                return val
+        for f in inputs.keys():
+            stdv = standardize_single(f, inputs[f])
+            coefv = coefs.get(f, 0.0)
+            contribs.append((f, coefv * stdv))
+        contrib_df = pd.DataFrame(contribs, columns=["feature","contribution"]).set_index("feature")
+        fig, ax = plt.subplots(figsize=(8,4))
+        contrib_df.sort_values("contribution", inplace=True)
+        ax.barh(contrib_df.index, contrib_df["contribution"])
+        ax.set_xlabel("Contribution (coef * standardized value)")
+        st.pyplot(fig)
