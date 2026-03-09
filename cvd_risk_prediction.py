@@ -118,15 +118,15 @@ def save_prediction(user_id, inputs, risk):
     data = {
         "user_id": user_id,
         "birth_year": inputs["birth_year"],
-        "sbp": inputs["SBP"],
-        "tg": inputs["TG"],
-        "wbc": inputs["WBC"],
-        "bmi": inputs["BMI"],
-        "hypertension": inputs["Hypertension"],
-        "dyslipidemia": inputs["Dyslipidemia"],
-        "multimorbidity": inputs["Multimorbidity"],
-        "bodily_pains": inputs["Bodily pains"],
-        "famine_exposure": inputs["Famine Exposure"],
+        "sbp": inputs["sbp"],
+        "tg": inputs["tg"],
+        "wbc": inputs["wbc"],
+        "bmi": inputs["bmi"],
+        "hypertension": inputs["hypertension"],
+        "dyslipidemia": inputs["dyslipidemia"],
+        "multimorbidity": inputs["multimorbidity"],
+        "bodily_pains": inputs["bodily_pains"],
+        "famine_exposure": inputs["famine_exposure"],
         "risk_probability": float(risk)
     }
     supabase.table("predictions").insert(data).execute()
@@ -317,8 +317,25 @@ if st.session_state.get("authentication_status"):
 
         # 保存预测记录到Supabase
         save_prediction(st.session_state["user_id"], input_dict, risk)
+        
+        # 构建用于保存的数据字典（键名与数据库列一致）
+        save_data = {
+            "birth_year": birth_year,
+            "sbp": sbp,
+            "tg": tg,
+            "wbc": wbc,
+            "bmi": bmi,
+            "hypertension": hypertension,
+            "dyslipidemia": dyslipidemia,
+            "multimorbidity": multimorbidity,
+            "bodily_pains": bodily_pains,
+            "famine_exposure": famine_exposure
+        }
 
-        # SHAP力图（同你原有）
+        # 调用保存函数，传入新字典
+        save_prediction(st.session_state["user_id"], save_data, risk)
+
+        # SHAP力图
         st.subheader("SHAP Force Plot")
         try:
             background = np.zeros((1, len(FEATURE_ORDER)))
