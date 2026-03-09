@@ -5,3 +5,6 @@ pandas
 numpy
 matplotlib
 shap
+supabase
+streamlit-authenticator
+bcrypt
