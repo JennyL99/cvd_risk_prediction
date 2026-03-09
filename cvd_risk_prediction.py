@@ -75,12 +75,6 @@ def categorize_famine(year):
 # ----------------------------
 # 用户认证配置
 # ----------------------------
-# 我们使用streamlit-authenticator，但用户数据存储在Supabase中
-# 首先从Supabase获取所有用户信息（但为了安全，我们只获取用户名和哈希密码）
-# 实际应用中，我们可以直接使用Supabase内置的Auth，但为了简化教程，我们手动管理用户表。
-# 这里我们采用一种简单方式：在Supabase中建一个users表，包含username和password_hash。
-# 注册时写入，登录时验证。
-
 def get_users():
     """从Supabase获取所有用户，返回字典格式供authenticator使用"""
     response = supabase.table("users").select("*").execute()
@@ -202,7 +196,7 @@ with st.sidebar:
 # 主应用：仅当登录后显示
 # ----------------------------
 if st.session_state.get("authentication_status"):
-    # 语言切换（同你原有代码）
+    # 语言切换
     if "lang" not in st.session_state:
         st.session_state.lang = "en"
     col_left, col_right = st.columns([0.82, 0.18])
@@ -215,7 +209,7 @@ if st.session_state.get("authentication_status"):
                 st.session_state.lang = "en"
     lang = st.session_state.lang
 
-    # 文本字典（略，可复制你原来的）
+    # 文本字典
     TEXT = {
         "en": {
             "title": "CVD Risk Prediction",
@@ -266,7 +260,7 @@ if st.session_state.get("authentication_status"):
     st.markdown(f"<p style='text-align:center; color:#444'>{T['intro']}</p>", unsafe_allow_html=True)
     st.markdown("---")
 
-    # 创建两列输入布局（同你原有）
+    # 输入布局
     col1, col2 = st.columns(2)
 
     with col1:
@@ -286,6 +280,7 @@ if st.session_state.get("authentication_status"):
 
     # 预测按钮
     if st.button(T["predict"]):
+        # 用于模型预测的字典（注意键名与模型训练时一致）
         input_dict = {
             'SBP': sbp, 'TG': tg, 'WBC': wbc, 'BMI': bmi,
             'Hypertension': hypertension,
@@ -315,9 +310,6 @@ if st.session_state.get("authentication_status"):
         else:
             st.error(T["high"])
 
-        # 保存预测记录到Supabase
-        save_prediction(st.session_state["user_id"], input_dict, risk)
-        
         # 构建用于保存的数据字典（键名与数据库列一致）
         save_data = {
             "birth_year": birth_year,
